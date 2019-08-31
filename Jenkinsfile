@@ -38,12 +38,11 @@ pipeline {
                         }
                     }
                     steps {
-                        // Make sure static_assertion fails
-                        echo 'Confirming static assertion...'
-                        sh 'cargo check --all --all-targets || exit 0'
-
+                        sh 'cargo update'
                         // Perform actual check
                         sh 'cargo check --all --all-targets --features "vulkan sdl_controller json saveload"'
+                        echo 'Running Cargo clippy...'
+                        sh 'cargo clippy --all --all-targets --features "vulkan sdl_controller json saveload"'
                     }
                 }
                 stage("nightly") {
@@ -57,14 +56,30 @@ pipeline {
                         }
                     }
                     steps {
-                        // Make sure static_assertion fails
-                        echo 'Confirming static assertion...'
-                        sh 'cargo check --all --all-targets || exit 0'
-
+                        sh 'cargo update'
                         // Perform actual check
                         echo 'Running Cargo check...'
                         sh 'cargo check --all --all-targets --features "nightly vulkan sdl_controller json saveload"'
                     }
+                }
+            }
+        }
+        // Separate stage for coverage to prevent race condition with the linux test stage (repo lock contention).
+        stage('Coverage') {
+            agent {
+                docker {
+                    image 'amethystrs/builder-linux:stable'
+                    args '--privileged'
+                    label 'docker'
+                }
+            }
+            steps {
+                withCredentials([string(credentialsId: 'codecov_token', variable: 'CODECOV_TOKEN')]) {
+                    echo 'Calculating code coverage...'
+                    sh './scripts/coverage.sh'
+                    echo "Uploading coverage..."
+                    sh "curl -s https://codecov.io/bash | bash -s ./target/coverage/merged -t $CODECOV_TOKEN"
+                    echo "Uploaded code coverage!"
                 }
             }
         }
@@ -79,6 +94,7 @@ pipeline {
                         label 'windows'
                     }
                     steps {
+                        bat 'C:\\Users\\root\\.cargo\\bin\\cargo update'
                         echo 'Beginning tests...'
                         bat 'C:\\Users\\root\\.cargo\\bin\\cargo test --all --features "vulkan json saveload"'
                         echo 'Tests done!'
@@ -97,26 +113,6 @@ pipeline {
                         echo 'Tests done!'
                     }
                 }
-                stage('Coverage') {
-                    agent {
-			            docker {
-			                image 'amethystrs/builder-linux:stable'
-                            args '--privileged'
-			                label 'docker'
-			            }
-                    }
-                    steps {
-                        withCredentials([string(credentialsId: 'codecov_token', variable: 'CODECOV_TOKEN')]) {
-                            echo 'Building to calculate coverage'
-                            sh 'cargo test --all --features "empty"'
-                            echo 'Calculating code coverage...'
-                            sh 'for file in target/debug/amethyst_*[^\\.d]; do mkdir -p \"target/cov/$(basename $file)\"; kcov --exclude-pattern=/.cargo,/usr/lib --verify \"target/cov/$(basename $file)\" \"$file\" || true; done'
-                            echo "Uploading coverage..."
-                            sh "curl -s https://codecov.io/bash | bash -s - -t $CODECOV_TOKEN"
-                            echo "Uploaded code coverage!"
-                        }
-                    }
-                }
                 // macOS is commented out due to needing to upgrade the OS, but MacStadium did not do the original install with APFS so we cannot upgrade easily
                 // stage("Test on macOS") {
                 //     environment {
@@ -128,7 +124,7 @@ pipeline {
                 //     }
                 //     steps {
                 //         echo 'Beginning tests...'
-                //         sh '/Users/jenkins/.cargo/bin/cargo test --all --features "empty"'
+                //         sh '/Users/jenkins/.cargo/bin/cargo test --all --features "metal"'
                 //         echo 'Tests done!'
                 //     }
                 // }

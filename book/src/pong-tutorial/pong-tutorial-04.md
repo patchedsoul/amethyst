@@ -158,11 +158,14 @@ We're now ready to implement the `MoveBallsSystem` in `systems/move_balls.rs`:
 use amethyst::{
     core::timing::Time,
     core::transform::Transform,
-    ecs::prelude::{Join, Read, ReadStorage, System, WriteStorage},
+    core::SystemDesc,
+    derive::SystemDesc,
+    ecs::prelude::{Join, Read, ReadStorage, System, SystemData, World, WriteStorage},
 };
 
 use crate::pong::Ball;
 
+#[derive(SystemDesc)]
 pub struct MoveBallsSystem;
 
 impl<'s> System<'s> for MoveBallsSystem {
@@ -237,12 +240,14 @@ by negating the velocity of the `Ball` component on the `x` or `y` axis.
 # }
 #
 use amethyst::{
-    core::{Float, Transform},
-    ecs::prelude::{Join, ReadStorage, System, WriteStorage},
+    core::{Transform, SystemDesc},
+    derive::SystemDesc,
+    ecs::prelude::{Join, ReadStorage, System, SystemData, World, WriteStorage},
 };
 
 use crate::pong::{Ball, Side, Paddle, ARENA_HEIGHT};
 
+# #[derive(SystemDesc)]
 pub struct BounceSystem;
 
 impl<'s> System<'s> for BounceSystem {
@@ -262,16 +267,16 @@ impl<'s> System<'s> for BounceSystem {
             let ball_y = transform.translation().y;
 
             // Bounce at the top or the bottom of the arena.
-            if (ball_y.as_f32() <= ball.radius && ball.velocity[1] < 0.0)
-                || (ball_y.as_f32() >= ARENA_HEIGHT - ball.radius && ball.velocity[1] > 0.0)
+            if (ball_y <= ball.radius && ball.velocity[1] < 0.0)
+                || (ball_y >= ARENA_HEIGHT - ball.radius && ball.velocity[1] > 0.0)
             {
                 ball.velocity[1] = -ball.velocity[1];
             }
 
             // Bounce at the paddles.
             for (paddle, paddle_transform) in (&paddles, &transforms).join() {
-                let paddle_x = paddle_transform.translation().x - Float::from(paddle.width * 0.5);
-                let paddle_y = paddle_transform.translation().y - Float::from(paddle.height * 0.5);
+                let paddle_x = paddle_transform.translation().x - (paddle.width * 0.5);
+                let paddle_y = paddle_transform.translation().y - (paddle.height * 0.5);
 
                 // To determine whether the ball has collided with a paddle, we create a larger
                 // rectangle around the current one, by subtracting the ball radius from the
@@ -281,10 +286,10 @@ impl<'s> System<'s> for BounceSystem {
                 if point_in_rect(
                     ball_x,
                     ball_y,
-                    paddle_x - ball.radius.into(),
-                    paddle_y - ball.radius.into(),
-                    paddle_x + (paddle.width + ball.radius).into(),
-                    paddle_y + (paddle.height + ball.radius).into(),
+                    paddle_x - ball.radius,
+                    paddle_y - ball.radius,
+                    paddle_x + paddle.width + ball.radius,
+                    paddle_y + paddle.height + ball.radius,
                 ) {
                     if (paddle.side == Side::Left && ball.velocity[0] < 0.0)
                         || (paddle.side == Side::Right && ball.velocity[0] > 0.0)
@@ -299,7 +304,7 @@ impl<'s> System<'s> for BounceSystem {
 
 // A point is in a box when its coordinates are smaller or equal than the top
 // right and larger or equal than the bottom left.
-fn point_in_rect(x: Float, y: Float, left: Float, bottom: Float, right: Float, top: Float) -> bool {
+fn point_in_rect(x: f32, y: f32, left: f32, bottom: f32, right: f32, top: f32) -> bool {
     x >= left && x <= right && y >= bottom && y <= top
 }
 #
@@ -320,20 +325,26 @@ as well as adding our new systems to the game data:
 # use amethyst::window::DisplayConfig;
 # use amethyst::input::StringBindings;
 # fn main() -> amethyst::Result<()> {
-# let path = "./resources/display_config.ron";
+# let path = "./config/display.ron";
 # let config = DisplayConfig::load(&path);
 # mod systems {
 # use amethyst;
+# use amethyst::core::ecs::{System, SystemData, World};
+# use amethyst::core::SystemDesc;
+# use amethyst::derive::SystemDesc;
+# #[derive(SystemDesc)]
 # pub struct PaddleSystem;
 # impl<'a> amethyst::ecs::System<'a> for PaddleSystem {
 # type SystemData = ();
 # fn run(&mut self, _: Self::SystemData) { }
 # }
+# #[derive(SystemDesc)]
 # pub struct MoveBallsSystem;
 # impl<'a> amethyst::ecs::System<'a> for MoveBallsSystem {
 # type SystemData = ();
 # fn run(&mut self, _: Self::SystemData) { }
 # }
+# #[derive(SystemDesc)]
 # pub struct BounceSystem;
 # impl<'a> amethyst::ecs::System<'a> for BounceSystem {
 # type SystemData = ();
@@ -341,6 +352,7 @@ as well as adding our new systems to the game data:
 # }
 # }
 # let input_bundle = amethyst::input::InputBundle::<StringBindings>::new();
+let mut world = World::new();
 let game_data = GameDataBuilder::default()
 #    .with_bundle(TransformBundle::new())?
 #    .with_bundle(input_bundle)?
@@ -368,7 +380,7 @@ outside of the screen when the window comes up. You might have to dramatically r
 `BALL_VELOCITY_X` in order to see that in action. This obviously isn't a good solution for an actual game.
 To fix that problem and better see what's happening we have to spawn the ball with a slight delay.
 
-## Spwaning ball with a delay
+## Spawning ball with a delay
 
 The ball now spawns and moves off screen instantly when the game starts. This might be disorienting,
 as you might be thrown into the game and lose your first point before you had the time to notice.
@@ -422,13 +434,17 @@ default empty state. Now let's use that inside our `Application` creation code i
 
 ```rust,edition2018,no_run,noplaypen
 # extern crate amethyst;
-# use amethyst::prelude::*;
+# use amethyst::{
+#     ecs::{World, WorldExt},
+#     prelude::*,
+# };
 #
 # #[derive(Default)] struct Pong;
 # impl SimpleState for Pong { }
 # fn main() -> amethyst::Result<()> {
 #   let game_data = GameDataBuilder::default();
 #   let assets_dir = "/";
+#   let world = World::new();
 let mut game = Application::new(assets_dir, Pong::default(), game_data)?;
 #   Ok(())
 # }
@@ -480,7 +496,7 @@ impl SimpleState for Pong {
         if let Some(mut timer) = self.ball_spawn_timer.take() {
             // If the timer isn't expired yet, subtract the time that passed since the last update.
             {
-                let time = data.world.res.fetch::<Time>();
+                let time = data.world.fetch::<Time>();
                 timer -= time.delta_seconds();
             }
             if timer <= 0.0 {

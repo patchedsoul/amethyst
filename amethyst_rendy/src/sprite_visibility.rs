@@ -4,12 +4,14 @@ use crate::{
     transparent::Transparent,
 };
 use amethyst_core::{
-    ecs::prelude::{Entities, Entity, Join, Read, ReadStorage, System, Write},
-    math::{self as na, ComplexField, Point3, Vector3},
-    Float, Hidden, HiddenPropagate, Transform,
+    ecs::{
+        hibitset::BitSet,
+        prelude::{Entities, Entity, Join, Read, ReadStorage, System, Write},
+    },
+    math::{Point3, Vector3},
+    Hidden, HiddenPropagate, Transform,
 };
 use derivative::Derivative;
-use hibitset::BitSet;
 use std::cmp::Ordering;
 
 #[cfg(feature = "profiler")]
@@ -44,9 +46,9 @@ pub struct SpriteVisibilitySortingSystem {
 struct Internals {
     entity: Entity,
     transparent: bool,
-    centroid: Point3<Float>,
-    camera_distance: Float,
-    from_camera: Vector3<Float>,
+    centroid: Point3<f32>,
+    camera_distance: f32,
+    from_camera: Vector3<f32>,
 }
 
 impl SpriteVisibilitySortingSystem {
@@ -96,7 +98,7 @@ impl<'a> System<'a> for SpriteVisibilitySortingSystem {
                 .join()
                 .map(|(e, t, _, _)| (e, t.global_matrix().transform_point(&origin)))
                 // filter entities behind the camera
-                .filter(|(_, c)| (c - camera_centroid).dot(&camera_backward) < na::zero())
+                .filter(|(_, c)| (c - camera_centroid).dot(&camera_backward) < 0.0)
                 .map(|(entity, centroid)| Internals {
                     entity,
                     transparent: transparent.contains(entity),

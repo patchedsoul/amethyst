@@ -3,12 +3,11 @@
 Amethyst uses an `InputHandler` to handle user input.
 You initialise this `InputHandler` by creating an `InputBundle` and adding it to the game data.
 
-```rust,no_run,noplaypen
+```rust,edition2018,no_run,noplaypen
 # extern crate amethyst;
 use amethyst::{
     prelude::*,
     input::{InputBundle, StringBindings},
-#   window::{WindowBundle, DisplayConfig},
 };
 
 # struct Example;
@@ -17,30 +16,30 @@ fn main() -> amethyst::Result<()> {
     // StringBindings is the default BindingTypes
     let input_bundle = InputBundle::<StringBindings>::new();
 
+    let mut world = World::new();
     let game_data = GameDataBuilder::default()
-        //..
-        # .with_bundle(WindowBundle::from_config(DisplayConfig::default()))?
-        .with_bundle(input_bundle)?
-        # ;
-        //..
-
     //..
-    # let mut game = Application::new("./", Example, game_data)?;
-    # game.run();
-    # Ok(())
+    .with_bundle(input_bundle)?
+    //..
+#   ;
+
+    Ok(())
 }
 ```
 
 To use the `InputHandler` inside a `System` you have to add it to the `SystemData`. With this you can check for events from input devices.
 
-```rust,no_run,noplaypen
+```rust,edition2018,no_run,noplaypen
 # extern crate amethyst;
 use amethyst::{
-  prelude::*,
-  input::{InputHandler, ControllerButton, VirtualKeyCode, StringBindings},
-  ecs::{Read, System},
+    prelude::*,
+    input::{InputHandler, ControllerButton, VirtualKeyCode, StringBindings},
+    core::SystemDesc,
+    derive::SystemDesc,
+    ecs::{Read, System, SystemData, World},
 };
 
+#[derive(SystemDesc)]
 struct ExampleSystem;
 
 impl<'s> System<'s> for ExampleSystem {
@@ -52,19 +51,17 @@ impl<'s> System<'s> for ExampleSystem {
         if let Some((x, y)) = input.mouse_position() {
             //..
         }
-
+        
         // Gets all connected controllers
         let controllers = input.connected_controllers();
         for controller in controllers {
             // Checks if the A button is down on each connected controller
-            let button_a = 
-                input
-                .controller_button_is_down(controller, ControllerButton::A);
+            let buttonA = input.controller_button_is_down(controller, ControllerButton::A);
             //..
         }
 
         // Checks if the A button is down on the keyboard
-        let button_a = input.key_is_down(VirtualKeyCode::A);
+        let buttonA = input.key_is_down(VirtualKeyCode::A);
         //..
     }
 }
@@ -74,11 +71,18 @@ You can find all the methods from `InputHandler` [here](https://docs-src.amethys
 
 Now you have to add the `System` to the game data, just like you would do with any other `System`. A `System` that uses an `InputHandler` needs `"input_system"` inside its dependencies.
 
-```rust,ignore
-    let game_data = GameDataBuilder::default()
-        //..
-        .with(ExampleSystem, "example_system", &["input_system"])
-        //..
+```rust,edition2018,no_run,noplaypen
+# extern crate amethyst;
+# use amethyst::{prelude::*, ecs::*, core::SystemDesc, derive::SystemDesc};
+# #[derive(SystemDesc)]
+# struct ExampleSystem; 
+# impl<'a> System<'a> for ExampleSystem { type SystemData = (); fn run(&mut self, _: ()) {}}
+#
+let game_data = GameDataBuilder::default()
+    //..
+    .with(ExampleSystem, "example_system", &["input_system"])
+    //..
+#   ;
 ```
 
 ## Defining Key Bindings in a File
@@ -114,42 +118,29 @@ The possible inputs you can specify for axes are listed [here](https://docs-src.
 
 To add these bindings to the `InputBundle` you simply need to call the `with_bindings_from_file` function on the `InputBundle`.
 
-```rust,no_run,noplaypen
+```rust,edition2018,no_run,noplaypen
 # extern crate amethyst;
-# use amethyst::{
-#   prelude::*,
-#   utils::application_root_dir,
-#   input::{InputBundle, StringBindings},
-#   window::{WindowBundle, DisplayConfig},
-# };
-# struct Example;
-# impl SimpleState for Example {}
-# fn main() -> amethyst::Result<()> {
-    let root = application_root_dir()?;
-    let bindings_config = root.join("resources").join("bindings_config.ron");
+# use amethyst::{prelude::*, input::*, utils::*};
+# fn main() -> amethyst::Result::<()> {
+let root = application_root_dir()?;
+let bindings_config = root.join("config").join("bindings.ron");
 
-    let input_bundle = 
-        InputBundle::<StringBindings>::new()
-        .with_bindings_from_file(bindings_config)?;
+let input_bundle = InputBundle::<StringBindings>::new()
+    .with_bindings_from_file(bindings_config)?;
 
-    //..
-    # let game_data = GameDataBuilder::default()
-    #     .with_bundle(WindowBundle::from_config(DisplayConfig::default()))?
-    #     .with_bundle(input_bundle)?;
-    # let mut game = Application::new("./", Example, game_data)?;
-    # game.run();
-    # Ok(())
-# }
+//..
+# Ok(()) }
 ```
 
 And now you can get the [axis](https://docs-src.amethyst.rs/stable/amethyst_input/struct.InputHandler.html#method.axis_value) and [action](https://docs-src.amethyst.rs/stable/amethyst_input/struct.InputHandler.html#method.action_is_down) values from the `InputHandler`.
 
-```rust,no_run,noplaypen
+```rust,edition2018,no_run,noplaypen
 # extern crate amethyst;
 use amethyst::{
     prelude::*,
-    core::Transform,
-    ecs::{Join, Read, ReadStorage, System, WriteStorage, DenseVecStorage, Component},
+    core::{Transform, SystemDesc},
+    derive::SystemDesc,
+    ecs::{Component, DenseVecStorage, Join, Read, ReadStorage, System, SystemData, World, WriteStorage},
     input::{InputHandler, StringBindings},
 };
 
@@ -167,6 +158,7 @@ impl Component for Player {
     type Storage = DenseVecStorage<Self>;
 }
 
+#[derive(SystemDesc)]
 struct MovementSystem;
 
 impl<'s> System<'s> for MovementSystem {
@@ -175,17 +167,17 @@ impl<'s> System<'s> for MovementSystem {
         ReadStorage<'s, Player>,
         Read<'s, InputHandler<StringBindings>>,
     );
-
-    fn run(&mut self, (mut transform, player, input): Self::SystemData) {
-        for (player, transform) in (&player, &mut transform).join() {
+    
+    fn run(&mut self, (mut transforms, players, input): Self::SystemData) {
+        for (player, transform) in (&players, &mut transforms).join() {
             let horizontal = input.axis_value("horizontal").unwrap_or(0.0);
             let vertical = input.axis_value("vertical").unwrap_or(0.0);
-
+            
             let shoot = input.action_is_down("shoot").unwrap_or(false);
-
+            
             transform.move_up(horizontal);
             transform.move_right(vertical);
-
+            
             if shoot {
                 player.shoot();
             }

@@ -7,11 +7,12 @@ use crate::{
 use amethyst_assets::{AssetStorage, Handle};
 use amethyst_core::{
     ecs::{
-        Component, DenseVecStorage, Entities, Join, Read, ReadStorage, Resources, System,
-        SystemData, Write, WriteExpect, WriteStorage,
+        Component, DenseVecStorage, Entities, Join, Read, ReadStorage, System, SystemData, World,
+        Write, WriteExpect, WriteStorage,
     },
-    Hidden, HiddenPropagate,
+    Hidden, HiddenPropagate, SystemDesc,
 };
+use amethyst_derive::SystemDesc;
 use amethyst_rendy::{
     rendy::{
         command::QueueId,
@@ -40,6 +41,7 @@ impl UiGlyphsResource {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct UiGlyphs {
     pub(crate) sel_vertices: Vec<UiArgs>,
     pub(crate) vertices: Vec<UiArgs>,
@@ -84,15 +86,20 @@ impl LineBreaker for CustomLineBreaker {
 }
 
 /// Manages the text editing cursor create, deletion and position.
+#[allow(missing_debug_implementations)]
+#[derive(SystemDesc)]
+#[system_desc(name(UiGlyphsSystemDesc))]
+#[system_desc(insert("UiGlyphsResource { glyph_tex: None }"))]
 pub struct UiGlyphsSystem<B: Backend> {
+    #[system_desc(skip)]
     glyph_brush: GlyphBrush<'static, (u32, UiArgs)>,
+    #[system_desc(skip)]
     fonts_map: HashMap<u32, FontState>,
     marker: PhantomData<B>,
 }
 
-impl<B: Backend> UiGlyphsSystem<B> {
-    /// Create new UI glyphs system
-    pub fn new() -> Self {
+impl<B: Backend> Default for UiGlyphsSystem<B> {
+    fn default() -> Self {
         Self {
             glyph_brush: GlyphBrushBuilder::using_fonts(vec![])
                 .initial_cache_size((512, 512))
@@ -103,13 +110,8 @@ impl<B: Backend> UiGlyphsSystem<B> {
     }
 }
 
-impl<B: Backend> Default for UiGlyphsSystem<B> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<'a, B: Backend> System<'a> for UiGlyphsSystem<B> {
+    #[allow(clippy::type_complexity)]
     type SystemData = (
         Option<Write<'a, Factory<B>>>,
         Option<Read<'a, QueueId>>,
@@ -543,11 +545,6 @@ impl<'a, B: Backend> System<'a> for UiGlyphsSystem<B> {
                 }
             }
         }
-    }
-
-    fn setup(&mut self, res: &mut Resources) {
-        Self::SystemData::setup(res);
-        res.insert(UiGlyphsResource { glyph_tex: None });
     }
 }
 

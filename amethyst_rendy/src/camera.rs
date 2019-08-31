@@ -3,7 +3,8 @@
 use amethyst_assets::PrefabData;
 use amethyst_core::{
     ecs::prelude::{Component, Entity, HashMapStorage, Write, WriteStorage},
-    math::Matrix4,
+    math::{Matrix4, Point2, Point3, Vector2},
+    transform::components::Transform,
 };
 
 use amethyst_error::Error;
@@ -402,6 +403,50 @@ impl Projection {
             Projection::Perspective(ref mut s) => s.as_matrix_mut(),
         }
     }
+
+    /// Transforms position from screen space to camera space
+    pub fn screen_to_world(
+        &self,
+        screen_position: Point2<f32>,
+        screen_diagonal: Vector2<f32>,
+        camera_transform: &Transform,
+    ) -> Point3<f32> {
+        let screen_x = 2.0 * screen_position.x / screen_diagonal.x - 1.0;
+        let screen_y = 2.0 * screen_position.y / screen_diagonal.y - 1.0;
+        let screen_point = Point3::new(screen_x, screen_y, 0.0).to_homogeneous();
+
+        let render_matrix: Matrix4<f32> =
+            amethyst_core::math::convert(*camera_transform.global_matrix());
+
+        let vector = render_matrix
+            * self
+                .as_matrix()
+                .try_inverse()
+                .expect("Camera projection matrix is not invertible")
+            * screen_point;
+
+        Point3::from_homogeneous(vector).expect("Vector is not homogeneous")
+    }
+
+    /// Translate from world coordinates to screen coordinates
+    pub fn world_to_screen(
+        &self,
+        world_position: Point3<f32>,
+        screen_diagonal: Vector2<f32>,
+        camera_transform: &Transform,
+    ) -> Point2<f32> {
+        let render_matrix: Matrix4<f32> =
+            amethyst_core::math::convert(*camera_transform.global_matrix());
+
+        let f = render_matrix * self.as_matrix();
+
+        let screen_pos = f.transform_point(&world_position);
+
+        Point2::new(
+            (screen_pos.x + 1.0) * screen_diagonal.x / 2.0,
+            (screen_pos.y + 1.0) * screen_diagonal.y / 2.0,
+        )
+    }
 }
 
 impl From<Orthographic> for Projection {
@@ -631,6 +676,85 @@ mod tests {
 
     use approx::{assert_abs_diff_eq, assert_relative_eq, assert_ulps_eq};
     use more_asserts::{assert_ge, assert_gt, assert_le, assert_lt};
+
+    #[test]
+    fn screen_to_world() {
+        let diagonal = Vector2::new(1024.0, 768.0);
+
+        let ortho = Camera::standard_2d(diagonal.x, diagonal.y);
+        let mut transform = Transform::default();
+
+        let center_screen = Point2::new(diagonal.x / 2.0, diagonal.y / 2.0);
+        let top_left = Point2::new(0.0, 0.0);
+        let bottom_right = Point2::new(diagonal.x - 1.0, diagonal.y - 1.0);
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .screen_to_world(center_screen, diagonal, &transform),
+            Point3::new(0.0, 0.0, -0.1)
+        );
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .screen_to_world(top_left, diagonal, &transform),
+            Point3::new(-512.0, 384.0, -0.1)
+        );
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .screen_to_world(bottom_right, diagonal, &transform),
+            Point3::new(511.0, -383.0, -0.1)
+        );
+
+        transform.set_translation_x(100.0);
+        transform.set_translation_y(100.0);
+        transform.copy_local_to_global();
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .screen_to_world(center_screen, diagonal, &transform),
+            Point3::new(100.0, 100.0, -0.1)
+        );
+    }
+
+    #[test]
+    fn world_to_screen() {
+        let diagonal = Vector2::new(1024.0, 768.0);
+
+        let ortho = Camera::standard_2d(diagonal.x, diagonal.y);
+        let transform = Transform::default();
+
+        let center_screen = Point2::new(diagonal.x / 2.0, diagonal.y / 2.0);
+        let top_left = Point2::new(0.0, 0.0);
+        let bottom_right = Point2::new(diagonal.x - 1.0, diagonal.y - 1.0);
+
+        let top_left_world = Point3::new(-512.0, 384.0, -0.1);
+        let bottom_right_world = Point3::new(511.0, -383.0, -0.1);
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .world_to_screen(top_left_world, diagonal, &transform),
+            top_left
+        );
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .world_to_screen(bottom_right_world, diagonal, &transform),
+            bottom_right
+        );
+
+        assert_ulps_eq!(
+            ortho
+                .projection()
+                .world_to_screen(Point3::new(0.0, 0.0, 0.0), diagonal, &transform),
+            center_screen
+        );
+    }
 
     #[test]
     fn test_orthographic_serde() {
